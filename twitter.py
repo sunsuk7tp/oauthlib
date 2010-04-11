@@ -1,6 +1,11 @@
 # -*- coding:utf-8 -*-
 import httplib
 import logging
+try:
+    import simplejson as json
+except ImportError:
+    import json
+
 
 from oauth import OAuthToken
 from oauth_tools import OAuth
@@ -19,7 +24,7 @@ class TwitterOAuth(OAuth):
         return 'https://twitter.com/oauth/request_token'
 
     def get_user_authorization_url(self):
-        return 'http://twitter.com/oauth/authorize'
+        return 'https://twitter.com/oauth/authorize'
 
     def get_access_token_url(self):
         return 'https://twitter.com/oauth/access_token'
@@ -28,10 +33,10 @@ class TwitterOAuth(OAuth):
         if not isinstance(access_token, OAuthToken):
             access_token = OAuthToken.from_string(access_token)
         oauth_request = self.build_oauth_request(self.check_auth_url, access_token)
-        response = self.execute(oauth_request)
+        response = json.loads(self.execute(oauth_request))
         if "screen_name" in response:
             self.set_access_token(access_token)
-            return True
+            return response["screen_name"]
         return False
 
     def set_access_token(self, access_token):
@@ -104,6 +109,8 @@ class DjangoTwitterOAuth(TwitterOAuth):
         token = self.get_unauthorized_request_token(self.oauth_callback)
         auth_url = self.get_authorization_url(token)
         request.session["request_token"] = token.to_string()
+        request.session["status"] = status
+        request.session["dispatch"] = "update_status"
         return False, auth_url
 
     def get_friends(self, request, page=0, oauth_callback=None):
@@ -117,4 +124,21 @@ class DjangoTwitterOAuth(TwitterOAuth):
         token = self.get_unauthorized_request_token(self.oauth_callback)
         auth_url = self.get_authorization_url(token)
         request.session["request_token"] = token.to_string()
+        request.session["page"] = page
+        request.session["dispatch"] = "get_friends"
+        return False, auth_url
+
+    def get_screen_name(self, request, oauth_callback=None):
+        if not oauth_callback is None:
+            self.oauth_callback = oauth_callback
+        if "access_token" in request.session:
+            screen_name = self.is_authenticated(request.session["access_token"])
+            if screen_name:
+                return True, screen_name
+            else:
+                del request.session["access_token"]
+        token = self.get_unauthorized_request_token(self.oauth_callback)
+        auth_url = self.get_authorization_url(token)
+        request.session["request_token"] = token.to_string()
+        request.session["dispatch"] = "get_screen_name"
         return False, auth_url
